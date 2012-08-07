@@ -12,6 +12,7 @@ class CallbackModifiedHandler(PatternMatchingEventHandler):
     def __init__(self, callback, *args, **kwargs):
         self.callback = callback
         self.repeat_delay = kwargs.pop("repeat_delay", 0)
+        self.graceful = kwargs.pop("graceful", False)
         self.last_fired_time = 0
         super(CallbackModifiedHandler, self).__init__(*args, **kwargs)
 
@@ -21,4 +22,4 @@ class CallbackModifiedHandler(PatternMatchingEventHandler):
         if self.last_fired_time + self.repeat_delay < now:
             if not event.is_directory:
                 self.last_fired_time = now
-                self.callback()
+                self.callback(self.graceful)

@@ -26,6 +26,7 @@ from __future__ import absolute_import, with_statement
 
 import sys
 import os
+import signal
 import time
 from optparse import make_option
 from textwrap import dedent
@@ -197,6 +198,21 @@ class Command(BaseCommand):
         args = ("--interactive",) + args
         return supervisorctl.main(("-c",cfg_file) + args)
 
+    def _handle_gracefulrestart(self,cfg_file,*args,**options):
+        """Reload a process gracefully with SIGHUP"""
+        oldstdout = sys.stdout
+        sys.stdout = stdout = StringIO()
+        args = ("pid",) + args
+        supervisorctl.main(("-c",cfg_file) + args)
+        output = stdout.getvalue()
+        pids = output.split("\n")
+        sys.stdout = oldstdout
+        exit_code = 0
+        for pid in pids:
+            if pid:
+                exit_code = os.kill(int(pid.strip()), signal.SIGHUP) or exit_code
+        return exit_code
+
     def _handle_getconfig(self,cfg_file,*args,**options):
         """Command 'supervisor getconfig' prints merged config to stdout."""
         if args:
@@ -218,15 +234,21 @@ class Command(BaseCommand):
         if args:
             raise CommandError("supervisor autoreload takes no arguments")
         live_dirs = self._find_live_code_dirs()
-        reload_progs = self._get_autoreload_programs(cfg_file)
+        (reload_progs, graceful_reload_progs) = self._get_autoreload_programs(cfg_file)
 
-        def autoreloader():
+        def autoreloader(graceful=False):
             """
             Forks a subprocess to make the restart call.
             Otherwise supervisord might kill us and cancel the restart!
             """
             if os.fork() == 0:
-                sys.exit(self.handle("restart", *reload_progs, **options))
+                exit_code = 0
+                graceful_exit_code = 0
+                if graceful_reload_progs:
+                    graceful_exit_code = self.handle("gracefulrestart", *graceful_reload_progs, **options)
+                if reload_progs:
+                    exit_code = self.handle("restart", *reload_progs, **options)
+                sys.exit(graceful_exit_code or exit_code or 0)
 
         # Call the autoreloader callback whenever a .py file changes.
         # To prevent thrashing, limit callbacks to one per second.
@@ -280,14 +302,18 @@ class Command(BaseCommand):
         cfg = RawConfigParser()
         cfg.readfp(cfg_file)
         reload_progs = []
+        graceful_reload_progs = []
         for section in cfg.sections():
             if section.startswith("program:"):
                 try:
                     if cfg.getboolean(section,"autoreload"):
-                        reload_progs.append(section.split(":",1)[1])
+                        if cfg.getboolean(section, "autoreload_graceful"):
+                            graceful_reload_progs.append(section.split(":",1)[1])
+                        else:
+                            reload_progs.append(section.split(":",1)[1])
                 except NoOptionError:
                     pass
-        return reload_progs
+        return (reload_progs, graceful_reload_progs)
 
     def _find_live_code_dirs(self):
         """Find all directories in which we might have live python code.

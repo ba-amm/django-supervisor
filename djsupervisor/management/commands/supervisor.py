@@ -46,7 +46,6 @@ from django.core.management.base import BaseCommand, CommandError
 from django.conf import settings
 
 from djsupervisor.config import get_merged_config
-from djsupervisor.events import CallbackModifiedHandler
 from djsupervisor.events import ThrottledModifiedHandler
 
 AUTORELOAD_PATTERNS = getattr(settings, "SUPERVISOR_AUTORELOAD_PATTERNS",

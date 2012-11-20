@@ -47,6 +47,7 @@ from django.conf import settings
 
 from djsupervisor.config import get_merged_config
 from djsupervisor.events import CallbackModifiedHandler
+from djsupervisor.events import ThrottledModifiedHandler
 
 AUTORELOAD_PATTERNS = getattr(settings, "SUPERVISOR_AUTORELOAD_PATTERNS",
                               ['*.py'])
@@ -236,24 +237,9 @@ class Command(BaseCommand):
         live_dirs = self._find_live_code_dirs()
         (reload_progs, graceful_reload_progs) = self._get_autoreload_programs(cfg_file)
 
-        def autoreloader(graceful=False):
-            """
-            Forks a subprocess to make the restart call.
-            Otherwise supervisord might kill us and cancel the restart!
-            """
-            if os.fork() == 0:
-                exit_code = 0
-                graceful_exit_code = 0
-                if graceful_reload_progs:
-                    graceful_exit_code = self.handle("gracefulrestart", *graceful_reload_progs, **options)
-                if reload_progs:
-                    exit_code = self.handle("restart", *reload_progs, **options)
-                sys.exit(graceful_exit_code or exit_code or 0)
-
         # Call the autoreloader callback whenever a .py file changes.
         # To prevent thrashing, limit callbacks to one per second.
-        handler = CallbackModifiedHandler(callback=autoreloader,
-                                          repeat_delay=1,
+        handler = ThrottledModifiedHandler(repeat_delay=1,
                                           patterns=AUTORELOAD_PATTERNS,
                                           ignore_patterns=AUTORELOAD_IGNORE,
                                           ignore_directories=True)
@@ -261,32 +247,35 @@ class Command(BaseCommand):
         # Try to add watches using the platform-specific observer.
         # If this fails, print a warning and fall back to the PollingObserver.
         # This will avoid errors with e.g. too many inotify watches.
-        observer = None
-        for ObserverCls in (Observer, PollingObserver):
-            observer = ObserverCls()
-            try:
-                for live_dir in set(live_dirs):
-                    observer.schedule(handler, live_dir, True)
-                break
-            except Exception:
-                print>>sys.stderr, "COULD NOT WATCH FILESYSTEM USING"
-                print>>sys.stderr, "OBSERVER CLASS: ", ObserverCls
-                traceback.print_exc()
-                observer.start()
-                observer.stop()
+        observer = Observer()
 
-        # Fail out if none of the observers worked.
-        if observer is None:
-            print>>sys.stderr, "COULD NOT WATCH FILESYSTEM"
-            return 1
+        for live_dir in set(live_dirs):
+            observer.schedule(handler, live_dir, True)
 
         # Poll if we have an observer.
         # TODO: Is this sleep necessary?  Or will it suffice
         # to block indefinitely on something and wait to be killed?
+
+        prev_count = -1
+
         observer.start()
         try:
             while True:
                 time.sleep(1)
+
+                # Do we have some events in the queue and if yes, has
+                # this number changed since last time we checked?
+                if handler.event_count > 0 and prev_count == handler.event_count:
+                    if graceful_reload_progs:
+                        self.handle("gracefulrestart", *graceful_reload_progs, **options)
+
+                    if reload_progs:
+                        self.handle("restart", *reload_progs, **options)
+
+                    handler.reset_counter()
+
+                prev_count = handler.event_count
+
         except KeyboardInterrupt:
             observer.stop()
         observer.join()

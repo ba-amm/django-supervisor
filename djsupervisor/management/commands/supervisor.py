@@ -238,10 +238,11 @@ class Command(BaseCommand):
 
         # Call the autoreloader callback whenever a .py file changes.
         # To prevent thrashing, limit callbacks to one per second.
-        handler = ThrottledModifiedHandler(repeat_delay=1,
-                                          patterns=AUTORELOAD_PATTERNS,
-                                          ignore_patterns=AUTORELOAD_IGNORE,
-                                          ignore_directories=True)
+        handler = ThrottledModifiedHandler(
+          patterns=AUTORELOAD_PATTERNS,
+          ignore_patterns=AUTORELOAD_IGNORE,
+          ignore_directories=True
+        )
 
         # Try to add watches using the platform-specific observer.
         # If this fails, print a warning and fall back to the PollingObserver.

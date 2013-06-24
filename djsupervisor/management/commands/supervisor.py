@@ -304,7 +304,7 @@ class Command(BaseCommand):
                         if cfg.getboolean(section, "autoreload_graceful"):
                             graceful_reload_progs[section.split(":",1)[1]] = patterns
                         else:
-                            reload_progs.append[section.split(":",1)[1]] = patterns
+                            reload_progs[section.split(":",1)[1]] = patterns
                 except NoOptionError:
                     pass
         return (reload_progs, graceful_reload_progs)

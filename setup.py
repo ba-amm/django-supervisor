@@ -75,6 +75,7 @@ setup(
   install_requires=[
     "supervisor",
     "watchdog",
+    "pathtools",
   ],
   **setup_kwds
 )

@@ -258,6 +258,8 @@ class Command(BaseCommand):
 
         prev_count = -1
 
+        from pathtools.patterns import match_any_paths
+
         observer.start()
         try:
             while True:
@@ -266,11 +268,13 @@ class Command(BaseCommand):
                 # Do we have some events in the queue and if yes, has
                 # this number changed since last time we checked?
                 if handler.event_count > 0 and prev_count == handler.event_count:
-                    if graceful_reload_progs:
-                        self.handle("gracefulrestart", *graceful_reload_progs, **options)
+                    for prog, patterns in graceful_reload_progs.iteritems():
+                        if match_any_paths(handler.event_files, included_patterns=patterns, excluded_patterns=AUTORELOAD_IGNORE):
+                            self.handle("gracefulrestart", prog, **options)
 
-                    if reload_progs:
-                        self.handle("restart", *reload_progs, **options)
+                    for prog, patterns in reload_progs.iteritems():                        
+                        if match_any_paths(handler.event_files, included_patterns=patterns, excluded_patterns=AUTORELOAD_IGNORE):
+                            self.handle("restart", prog, **options)
 
                     handler.reset_counter()
 
@@ -290,16 +294,17 @@ class Command(BaseCommand):
         """
         cfg = RawConfigParser()
         cfg.readfp(cfg_file)
-        reload_progs = []
-        graceful_reload_progs = []
+        reload_progs = {}
+        graceful_reload_progs = {}
         for section in cfg.sections():
             if section.startswith("program:"):
                 try:
+                    patterns = cfg.get(section, "autoreload_patterns") if cfg.has_option(section, "autoreload_patterns") else AUTORELOAD_PATTERNS
                     if cfg.getboolean(section,"autoreload"):
                         if cfg.getboolean(section, "autoreload_graceful"):
-                            graceful_reload_progs.append(section.split(":",1)[1])
+                            graceful_reload_progs[section.split(":",1)[1]] = patterns
                         else:
-                            reload_progs.append(section.split(":",1)[1])
+                            reload_progs.append[section.split(":",1)[1]] = patterns
                 except NoOptionError:
                     pass
         return (reload_progs, graceful_reload_progs)

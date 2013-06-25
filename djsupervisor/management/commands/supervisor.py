@@ -299,7 +299,7 @@ class Command(BaseCommand):
         for section in cfg.sections():
             if section.startswith("program:"):
                 try:
-                    patterns = cfg.get(section, "autoreload_patterns") if cfg.has_option(section, "autoreload_patterns") else AUTORELOAD_PATTERNS
+                    patterns = cfg.get(section, "autoreload_patterns").split(",") if cfg.has_option(section, "autoreload_patterns") else AUTORELOAD_PATTERNS
                     if cfg.getboolean(section,"autoreload"):
                         if cfg.getboolean(section, "autoreload_graceful"):
                             graceful_reload_progs[section.split(":",1)[1]] = patterns
